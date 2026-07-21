@@ -3,16 +3,21 @@
  * SLACK → BITRIX LEADS — Processamento assíncrono do lead
  * ============================================================
  *
- * ARQUIVO: api/process-lead.js   |   DATA: 21/07/2026   |   VERSÃO: 1.2
+ * ARQUIVO: api/process-lead.js   |   DATA: 21/07/2026   |   VERSÃO: 1.3
  *
  * HISTÓRICO
  * ---------
+ * v1.3 (21/07/2026):
+ *   - CORRIGIDO: o ack-antecipado da v1.2 (res.json antes do await) fazia a
+ *     Vercel encerrar a função cedo — o log mostrou process-lead retornando
+ *     em ~105ms com "No outgoing requests", ou seja, morrendo antes de
+ *     chamar Slack/Bitrix. Revertido: agora processa TODO o trabalho e
+ *     responde só no fim. O limite de 3s do Slack continua protegido pelo
+ *     timeout de 2,5s no slack-events (v1.2), que aborta a espera do disparo
+ *     sem matar esta função (são requisições HTTP independentes).
  * v1.2 (21/07/2026):
- *   - Complementa a correção do slack-events v1.2. O handler agora responde
- *     200 IMEDIATAMENTE (ack) e só então executa o trabalho pesado
- *     (_processarLead), garantindo que o await do slack-events retorne rápido
- *     (bem dentro dos 3s do Slack) e que esta função seja de fato invocada.
- *     Toda a lógica original foi movida para _processarLead(), inalterada.
+ *   - (Substituída pela v1.3.) Tentava responder 200 imediatamente (ack) e
+ *     processar depois; não funcionou no runtime da Vercel.
  * v1.1 (21/07/2026):
  *   - Nenhuma mudança de lógica aqui. A mensagem de confirmação na thread
  *     segue mostrando o rótulo legível "CEO-Led Outbound" para o usuário;
@@ -76,35 +81,31 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Parâmetros ausentes (channel, ts, assignedById)' });
   }
 
-  // v1.2 (21/07/2026): responde o ack IMEDIATAMENTE para o slack-events, que
-  // aguarda apenas o envio (await curto). Só depois processamos o trabalho
-  // pesado. Envolvemos em Promise + await no fim para que a Vercel não encerre
-  // a função antes de _processarLead concluir.
-  let resolvido;
-  const concluido = new Promise((r) => (resolvido = r));
-
-  res.status(200).json({ ok: true, ack: true });
-
+  // v1.3 (21/07/2026): REVERTIDO o padrão ack-antecipado da v1.2. Na Vercel,
+  // chamar res.json() antes de terminar o await encerrava a função cedo
+  // (visto no log: process-lead retornava em ~105ms com "No outgoing
+  // requests" — morria antes de chamar Slack/Bitrix). Agora fazemos TODO o
+  // trabalho e respondemos só no fim. O limite de 3s do Slack já está
+  // protegido pelo timeout de 2,5s no slack-events (v1.2), então a duração
+  // desta função não afeta o Slack.
   try {
     await _processarLead(body);
+    return res.status(200).json({ ok: true });
   } catch (e) {
-    // Erros já são tratados/logados dentro de _processarLead; aqui é só rede.
     try {
       await responderNaThread(channel, ts,
         `❌ Erro inesperado ao processar o lead. Tente reagir novamente.`);
     } catch (_) { /* silencioso */ }
-  } finally {
-    resolvido();
+    return res.status(200).json({ ok: false, erro: String(e) });
   }
-
-  return concluido;
 };
 
 /**
  * _processarLead(body)
  * v1.2 (21/07/2026): corpo original do handler (busca mensagem → parseia →
- * checa duplicidade → cria no Bitrix → responde na thread), agora executado
- * DEPOIS do ack. Lógica idêntica à v1.1 — apenas extraída para função própria.
+ * checa duplicidade → cria no Bitrix → responde na thread), extraído para
+ * função própria.
+ * v1.3 (21/07/2026): passou a ser aguardado ANTES de responder (ver acima).
  */
 async function _processarLead(body) {
   const { channel, ts, assignedById } = body;
