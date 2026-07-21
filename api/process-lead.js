@@ -3,10 +3,16 @@
  * SLACK → BITRIX LEADS — Processamento assíncrono do lead
  * ============================================================
  *
- * ARQUIVO: api/process-lead.js   |   DATA: 21/07/2026   |   VERSÃO: 1.5
+ * ARQUIVO: api/process-lead.js   |   DATA: 21/07/2026   |   VERSÃO: 1.6
  *
  * HISTÓRICO
  * ---------
+ * v1.6 (21/07/2026):
+ *   - DIAGNÓSTICO: adicionados console.log em todo o fluxo do fallback Gemini
+ *     (chave presente?, resultado da extração, motivo da falha). Antes, quando
+ *     o Gemini era pulado ou falhava, o motivo era engolido e o usuário só via
+ *     "faltou Nome, Empresa" — sem pista nos logs. Agora o motivo aparece nos
+ *     logs da Vercel para depuração.
  * v1.5 (21/07/2026):
  *   - Email deixou de ser obrigatório em TODOS os caminhos (determinístico e
  *     fallback Gemini). Quando ausente, gera placeholder válido via
@@ -146,7 +152,15 @@ async function _processarLead(body) {
   // caminho feliz continua 100% sem IA. Se o Gemini não estiver configurado
   // (sem GEMINI_API_KEY) ou falhar, cai no aviso original mais abaixo.
   if (!ok) {
+    // v1.6 (21/07/2026): logs de diagnóstico. Antes, quando o Gemini falhava
+    // ou era pulado, o motivo era engolido silenciosamente — impossível
+    // depurar pelos logs da Vercel. Agora logamos cada etapa.
+    console.log('[GEMINI] parser determinístico falhou, tentando fallback. Texto:', JSON.stringify(msg.texto).substring(0, 300));
+    console.log('[GEMINI] GEMINI_API_KEY presente?', !!process.env.GEMINI_API_KEY);
+
     const g = await extrairCamposViaGemini(msg.texto);
+    console.log('[GEMINI] resultado:', JSON.stringify(g).substring(0, 500));
+
     if (g.ok) {
       const et = extrairEmailTelefone(msg.texto); // e-mail/telefone por regex
       const mesclado = {
@@ -166,9 +180,15 @@ async function _processarLead(body) {
 
       if (faltandoG.length === 0) {
         ok = true; campos = mesclado; faltando = [];
+        console.log('[GEMINI] extração OK:', JSON.stringify(mesclado).substring(0, 400));
       } else {
         faltando = faltandoG;
+        console.log('[GEMINI] extraiu mas faltou:', faltandoG.join(', '));
       }
+    } else {
+      // v1.6: expõe o motivo da falha do Gemini na thread e no log, em vez de
+      // só dizer "faltou Nome, Empresa".
+      console.log('[GEMINI] fallback não aplicado. Motivo:', g.erro || 'desconhecido');
     }
   }
 
