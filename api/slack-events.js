@@ -3,10 +3,23 @@
  * SLACK → BITRIX LEADS — Receptor de eventos do Slack
  * ============================================================
  *
- * ARQUIVO: api/slack-events.js   |   DATA: 21/07/2026   |   VERSÃO: 1.0
+ * ARQUIVO: api/slack-events.js   |   DATA: 21/07/2026   |   VERSÃO: 1.2
  *
  * HISTÓRICO
  * ---------
+ * v1.2 (21/07/2026):
+ *   - CORRIGIDO: o disparo para /api/process-lead era fire-and-forget
+ *     (fetch sem await). Na Vercel, ao retornar o 200 a função encerra e
+ *     MATA a requisição em andamento antes de ela sair — resultado: o
+ *     process-lead nunca era invocado ("No outgoing requests" no log).
+ *   - Agora o disparo é AGUARDADO (await) com um timeout curto (2,5s via
+ *     AbortController) para garantir que a requisição seja efetivamente
+ *     enviada, sem arriscar estourar o limite de 3s do Slack. Só esperamos
+ *     o process-lead ACEITAR o trabalho (ele responde cedo, ver v1.2 de
+ *     process-lead.js), não concluí-lo — o processamento pesado continua na
+ *     segunda função, dentro do timeout dela.
+ * v1.1 (21/07/2026):
+ *   - Sem mudanças neste arquivo (correção foi em lib/bitrix.js).
  * v1.0 (21/07/2026):
  *   - Versão inicial. Endpoint que recebe o evento `reaction_added` do
  *     Slack (Events API), responde em < 3s (exigência do Slack) e dispara
@@ -131,14 +144,17 @@ module.exports = async (req, res) => {
     return res.status(200).json({ ok: true, ignored: `emoji ${reaction} não mapeado` });
   }
 
-  // ── Dispara o processamento pesado de forma assíncrona ──
-  // v1.0 (21/07/2026): NÃO usamos await — respondemos ao Slack imediatamente
-  // (< 3s) e deixamos process-lead rodar em segundo plano. A própria function
-  // process-lead faz a busca no Slack + checagem/criação no Bitrix.
+  // ── Dispara o processamento pesado e AGUARDA o envio ──
+  // v1.2 (21/07/2026): antes era fire-and-forget (sem await), o que fazia a
+  // Vercel matar a requisição ao encerrar a função. Agora aguardamos o
+  // disparo sair, com timeout de 2,5s (AbortController) para não estourar o
+  // limite de 3s do Slack. O process-lead responde cedo (ack) e segue
+  // processando — ver process-lead.js v1.2.
   const baseUrl = process.env.SELF_BASE_URL || `https://${req.headers.host}`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 2500);
   try {
-    // fire-and-forget: dispara e não espera concluir
-    fetch(`${baseUrl}/api/process-lead`, {
+    await fetch(`${baseUrl}/api/process-lead`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -147,10 +163,15 @@ module.exports = async (req, res) => {
         reaction:     reaction,
         assignedById: assignedById,
         reactingUser: event.user
-      })
-    }).catch(() => { /* silencioso: já respondemos ao Slack */ });
+      }),
+      signal: ctrl.signal
+    });
   } catch (e) {
-    // Mesmo se o dispatch falhar, respondemos 200 para o Slack não reenviar.
+    // Se abortou por timeout, o process-lead provavelmente já recebeu o
+    // trabalho e está processando — respondemos 200 ao Slack de qualquer forma
+    // para evitar reenvio automático do evento.
+  } finally {
+    clearTimeout(timer);
   }
 
   return res.status(200).json({ ok: true });
