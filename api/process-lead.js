@@ -3,10 +3,25 @@
  * SLACK → BITRIX LEADS — Processamento assíncrono do lead
  * ============================================================
  *
- * ARQUIVO: api/process-lead.js   |   DATA: 21/07/2026   |   VERSÃO: 1.3
+ * ARQUIVO: api/process-lead.js   |   DATA: 21/07/2026   |   VERSÃO: 1.5
  *
  * HISTÓRICO
  * ---------
+ * v1.5 (21/07/2026):
+ *   - Email deixou de ser obrigatório em TODOS os caminhos (determinístico e
+ *     fallback Gemini). Quando ausente, gera placeholder válido via
+ *     parser.gerarEmailPlaceholder() (nome+id@naoexiste.com). O lead nunca é
+ *     recusado só por falta de e-mail — o telefone serve de identificador e o
+ *     Bitrix ignora e-mails @naoexiste.com no campo EMAIL.
+ * v1.4 (21/07/2026):
+ *   - NOVO: fallback opcional com Gemini para mensagens em texto livre.
+ *     Quando o parser determinístico não encontra os obrigatórios, o texto é
+ *     enviado ao Gemini (lib/gemini.js), que infere nome/empresa/origem/
+ *     observação. E-mail e telefone — por serem críticos — NÃO vêm da IA:
+ *     são extraídos por regex do texto original (parser.extrairEmailTelefone).
+ *     O caminho feliz (mensagem já no formato do formulário) continua 100%
+ *     sem IA. Se GEMINI_API_KEY não estiver configurada ou o Gemini falhar,
+ *     o comportamento é o mesmo da v1.3 (aviso "faltou preencher").
  * v1.3 (21/07/2026):
  *   - CORRIGIDO: o ack-antecipado da v1.2 (res.json antes do await) fazia a
  *     Vercel encerrar a função cedo — o log mostrou process-lead retornando
@@ -43,9 +58,10 @@
  * ============================================================
  */
 
-const { buscarMensagemReagida, responderNaThread } = require('../lib/slack');
-const { parseFormulario, separarNome }             = require('../lib/parser');
-const bitrix                                        = require('../lib/bitrix');
+const { buscarMensagemReagida, responderNaThread }        = require('../lib/slack');
+const { parseFormulario, separarNome, extrairEmailTelefone, gerarEmailPlaceholder } = require('../lib/parser');
+const { extrairCamposViaGemini }                          = require('../lib/gemini');
+const bitrix                                              = require('../lib/bitrix');
 
 /**
  * _linkLeadBitrix(leadId)
@@ -119,20 +135,57 @@ async function _processarLead(body) {
     return;
   }
 
-  // ── 2. Parseia o formulário ──
-  const { ok, campos, faltando } = parseFormulario(msg.texto);
+  // ── 2. Parseia o formulário (determinístico primeiro) ──
+  let { ok, campos, faltando } = parseFormulario(msg.texto);
+
+  // v1.4 (21/07/2026): FALLBACK com Gemini. Se o parser determinístico não
+  // achou os obrigatórios, a mensagem pode ser texto livre. Tentamos extrair
+  // via Gemini (nome/empresa/origem/observação) e, para os campos CRÍTICOS,
+  // pegamos e-mail e telefone por regex sobre o texto original (não confiamos
+  // na IA nesses). Só entra aqui quando o caminho determinístico falha — o
+  // caminho feliz continua 100% sem IA. Se o Gemini não estiver configurado
+  // (sem GEMINI_API_KEY) ou falhar, cai no aviso original mais abaixo.
+  if (!ok) {
+    const g = await extrairCamposViaGemini(msg.texto);
+    if (g.ok) {
+      const et = extrairEmailTelefone(msg.texto); // e-mail/telefone por regex
+      const mesclado = {
+        nome:       g.campos.nome       || '',
+        empresa:    g.campos.empresa    || '',
+        email:      et.email            || '',
+        telefone:   et.telefone         || '',
+        origem:     g.campos.origem     || '',
+        observacao: g.campos.observacao || ''
+      };
+      // v1.5 (21/07/2026): Email não é mais obrigatório — só Nome e Empresa.
+      // Se o regex não achou e-mail, segue mesmo assim; o placeholder é
+      // gerado logo abaixo.
+      const faltandoG = [];
+      if (!mesclado.nome)    faltandoG.push('Nome');
+      if (!mesclado.empresa) faltandoG.push('Empresa');
+
+      if (faltandoG.length === 0) {
+        ok = true; campos = mesclado; faltando = [];
+      } else {
+        faltando = faltandoG;
+      }
+    }
+  }
+
   if (!ok) {
     await responderNaThread(channel, ts,
-      `⚠️ Não criei o lead: faltou preencher ${faltando.join(', ')}. ` +
-      `Use o formato "Campo: valor" (Nome, Empresa e Email são obrigatórios).`);
+      `⚠️ Não criei o lead: faltou ${faltando.join(', ')}. ` +
+      `Você pode usar o formato "Campo: valor" (Nome e Empresa obrigatórios) ` +
+      `ou escrever livre incluindo pelo menos nome e empresa.`);
     return;
   }
 
-  // v1.0 (21/07/2026): se e-mail veio vazio (não deveria, é obrigatório, mas
-  // defesa extra), gera placeholder para não perder o lead.
+  // v1.5 (21/07/2026): e-mail é OPCIONAL. Quando ausente, gera placeholder
+  // válido (nome+id@naoexiste.com) para não perder o lead. O Bitrix não recebe
+  // esse valor no campo EMAIL (lib/bitrix.js ignora @naoexiste.com); o telefone
+  // serve de identificador.
   if (!campos.email) {
-    const slug = `${campos.nome}${Date.now()}`.toLowerCase().replace(/[^a-z0-9]/g, '');
-    campos.email = `${slug}@naoexiste.com`;
+    campos.email = gerarEmailPlaceholder(campos.nome);
   }
 
   // Pré-separa o nome (usado por contato e lead)
