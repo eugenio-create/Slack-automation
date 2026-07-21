@@ -1,0 +1,95 @@
+# Slack → Bitrix Leads
+
+**Versão 1.1 — 21/07/2026**
+
+Automação que cria um lead no Bitrix24 a partir de uma reação com emoji numa mensagem do Slack, com checagem de duplicidade (sem IA — tudo determinístico via regex + similaridade de string). Roda em Vercel (plano gratuito).
+
+## Como funciona
+
+1. Você preenche um formulário na thread do Slack (uma linha por campo) e reage à sua própria mensagem com um dos 3 emojis.
+2. O emoji define o responsável do lead no Bitrix:
+   - `1️⃣` → responsável **7**
+   - `2️⃣` → responsável **68**
+   - `3️⃣` → responsável **89**
+3. A automação lê a mensagem, checa se o lead já existe (por e-mail/telefone e, como fallback, por similaridade de nome+empresa) e, se for novo, cria **Empresa → Contato → Lead** no Bitrix.
+4. O lead entra na primeira etapa (`STATUS_ID = NEW`, "Novos Leads") com `SOURCE_ID = UC_EN7PZM` (código interno da fonte "CEO-Led Outbound").
+5. A automação responde na thread confirmando (criado, já existe, ou possível duplicata).
+
+## Formato do formulário
+
+```
+Nome: João Silva
+Empresa: Acme Ltda
+Email: joao@acme.com
+Telefone: (21) 99999-9999
+Origem: Indicação
+Observação: Cliente quer proposta até sexta
+```
+
+`Nome`, `Empresa` e `Email` são obrigatórios. `Telefone`, `Origem` e `Observação` são opcionais. Rótulos aceitam variações (E-mail, Fone, Obs, Fonte, etc.), acentos e maiúsculas/minúsculas.
+
+## Estrutura
+
+```
+api/
+  slack-events.js   Recebe reaction_added, valida assinatura, responde < 3s,
+                    dispara o processamento assíncrono.
+  process-lead.js   Lê a mensagem, parseia, checa duplicidade, cria no Bitrix,
+                    responde na thread.
+lib/
+  slack.js          Buscar mensagem reagida + postar resposta na thread.
+  parser.js         Parser do formulário (regex, sem IA).
+  bitrix.js         Duplicidade (exata + fuzzy) e criação Empresa/Contato/Lead.
+test/
+  parser-e-fuzzy.test.js  Testes locais (node test/parser-e-fuzzy.test.js).
+```
+
+## Passo a passo de deploy
+
+### 1. Criar o Slack App
+Em https://api.slack.com/apps → **Create New App** → From scratch.
+
+**OAuth & Permissions** → Bot Token Scopes, adicione:
+- `channels:history` (canais públicos) e/ou `groups:history` (canais privados)
+- `reactions:read`
+- `chat:write`
+
+Instale o app no workspace e copie o **Bot User OAuth Token** (`xoxb-...`).
+
+Em **Basic Information** → App Credentials, copie o **Signing Secret**.
+
+### 2. Deploy na Vercel
+- Suba este projeto num repositório (GitHub) e importe na Vercel, **ou** rode `vercel` pela CLI.
+- Em **Settings → Environment Variables**, configure (veja `.env.example`):
+  - `SLACK_SIGNING_SECRET`
+  - `SLACK_BOT_TOKEN`
+  - `BITRIX_WEBHOOK` (termina com `/`)
+  - `SELF_BASE_URL` (a URL do próprio deploy, ex.: `https://slack-bitrix-leads.vercel.app`)
+- Faça o deploy. Anote a URL pública.
+
+### 3. Ligar os eventos do Slack
+No Slack App → **Event Subscriptions** → Enable.
+- **Request URL**: `https://SEU-APP.vercel.app/api/slack-events`
+  (o Slack fará o handshake `url_verification` automaticamente — o endpoint já responde ao challenge).
+- Em **Subscribe to bot events**, adicione `reaction_added`.
+- Salve.
+
+### 4. Adicionar o bot ao canal
+Convide o bot para o canal onde os leads são trazidos: `/invite @seu-bot`.
+(Sem isso, o bot não consegue ler a mensagem nem responder na thread.)
+
+### 5. Testar
+Poste uma mensagem no formato do formulário e reaja com `1️⃣`, `2️⃣` ou `3️⃣`.
+A automação deve responder na thread em alguns segundos.
+
+## Ajustes de duplicidade
+
+- **Exata**: usa `crm.duplicate.findbycomm` (e-mail, depois telefone).
+- **Fuzzy** (fallback): compara nome+empresa contra os leads mais recentes com o coeficiente de Sørensen–Dice. Limiar em `lib/bitrix.js` → `LIMIAR_FUZZY` (padrão `0.85`). Aumente para ser mais permissivo (menos bloqueios), diminua para pegar mais possíveis duplicatas.
+- No match fuzzy, a automação **não cria** o lead automaticamente — apenas avisa na thread, deixando a decisão com você (evita bloquear leads legítimos por engano).
+
+## Notas de segurança
+
+- A assinatura de todas as requisições do Slack é verificada (HMAC v0) com proteção contra replay (5 min).
+- Segredos ficam só nas Environment Variables da Vercel, nunca no código.
+- E-mails placeholder (`@naoexiste.com`) não são gravados no campo EMAIL do Bitrix.

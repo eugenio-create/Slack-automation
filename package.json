@@ -1,0 +1,12 @@
+{
+  "name": "slack-bitrix-leads",
+  "version": "1.0.0",
+  "description": "Automação Slack (reação com emoji) → cria lead no Bitrix24 com checagem de duplicidade, sem IA.",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node test/parser-e-fuzzy.test.js"
+  }
+}
