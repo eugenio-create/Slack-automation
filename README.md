@@ -1,8 +1,8 @@
 # Slack → Bitrix Leads
 
-**Versão 1.1 — 21/07/2026**
+**Versão 1.5 — 21/07/2026**
 
-Automação que cria um lead no Bitrix24 a partir de uma reação com emoji numa mensagem do Slack, com checagem de duplicidade (sem IA — tudo determinístico via regex + similaridade de string). Roda em Vercel (plano gratuito).
+Automação que cria um lead no Bitrix24 a partir de uma reação com emoji numa mensagem do Slack, com checagem de duplicidade. O caminho principal é 100% determinístico (regex + similaridade de string); mensagens em texto livre podem ser estruturadas por um fallback opcional com Gemini. Roda em Vercel (plano gratuito).
 
 ## Como funciona
 
@@ -26,7 +26,22 @@ Origem: Indicação
 Observação: Cliente quer proposta até sexta
 ```
 
-`Nome`, `Empresa` e `Email` são obrigatórios. `Telefone`, `Origem` e `Observação` são opcionais. Rótulos aceitam variações (E-mail, Fone, Obs, Fonte, etc.), acentos e maiúsculas/minúsculas.
+`Nome` e `Empresa` são obrigatórios. `Email`, `Telefone`, `Origem` e `Observação` são opcionais. Rótulos aceitam variações (E-mail, Fone, Obs, Fonte, etc.), acentos e maiúsculas/minúsculas.
+
+**E-mail ausente:** a partir da v1.5, se o lead não tiver e-mail, a automação gera um placeholder válido (`nome+id@naoexiste.com`) e cria o lead assim mesmo — o telefone serve de identificador. Esse placeholder **não** é gravado no campo EMAIL do Bitrix (o campo fica vazio); ele só evita recusar o lead. Útil para leads CEO-led que frequentemente chegam sem e-mail.
+
+## Fallback com Gemini (opcional — texto livre)
+
+A partir da v1.4, se a mensagem **não** estiver no formato do formulário, a automação tenta estruturá-la com o Google Gemini:
+
+- Só é acionado quando o parser determinístico falha (mensagem já formatada nunca chama a IA — economiza cota e latência).
+- O Gemini infere **nome, empresa, origem e observação**.
+- **E-mail e telefone continuam sendo extraídos por regex** do texto original, não pela IA — são campos críticos que não podem sair errados.
+- Se `GEMINI_API_KEY` não estiver configurada, o fallback fica desligado e só o formato "Campo: valor" é aceito (comportamento das versões anteriores).
+
+Para habilitar: crie uma chave em https://aistudio.google.com/apikey (free tier serve) e configure `GEMINI_API_KEY` nas Environment Variables da Vercel. Opcionalmente, `GEMINI_MODEL` (padrão `gemini-2.0-flash`). Lembre-se de fazer **Redeploy** após adicionar a variável.
+
+A partir da v1.5, e-mail é opcional em todos os caminhos: se a IA estruturar a mensagem mas o regex não achar um e-mail no texto, a automação gera um placeholder e cria o lead assim mesmo (usando o telefone como identificador).
 
 ## Estrutura
 
@@ -38,7 +53,8 @@ api/
                     responde na thread.
 lib/
   slack.js          Buscar mensagem reagida + postar resposta na thread.
-  parser.js         Parser do formulário (regex, sem IA).
+  parser.js         Parser do formulário (regex) + extração email/telefone.
+  gemini.js         Fallback opcional: estrutura texto livre via Gemini.
   bitrix.js         Duplicidade (exata + fuzzy) e criação Empresa/Contato/Lead.
 test/
   parser-e-fuzzy.test.js  Testes locais (node test/parser-e-fuzzy.test.js).
