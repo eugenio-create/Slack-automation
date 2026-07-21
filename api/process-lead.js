@@ -3,10 +3,16 @@
  * SLACK → BITRIX LEADS — Processamento assíncrono do lead
  * ============================================================
  *
- * ARQUIVO: api/process-lead.js   |   DATA: 21/07/2026   |   VERSÃO: 1.1
+ * ARQUIVO: api/process-lead.js   |   DATA: 21/07/2026   |   VERSÃO: 1.2
  *
  * HISTÓRICO
  * ---------
+ * v1.2 (21/07/2026):
+ *   - Complementa a correção do slack-events v1.2. O handler agora responde
+ *     200 IMEDIATAMENTE (ack) e só então executa o trabalho pesado
+ *     (_processarLead), garantindo que o await do slack-events retorne rápido
+ *     (bem dentro dos 3s do Slack) e que esta função seja de fato invocada.
+ *     Toda a lógica original foi movida para _processarLead(), inalterada.
  * v1.1 (21/07/2026):
  *   - Nenhuma mudança de lógica aqui. A mensagem de confirmação na thread
  *     segue mostrando o rótulo legível "CEO-Led Outbound" para o usuário;
@@ -70,13 +76,46 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Parâmetros ausentes (channel, ts, assignedById)' });
   }
 
+  // v1.2 (21/07/2026): responde o ack IMEDIATAMENTE para o slack-events, que
+  // aguarda apenas o envio (await curto). Só depois processamos o trabalho
+  // pesado. Envolvemos em Promise + await no fim para que a Vercel não encerre
+  // a função antes de _processarLead concluir.
+  let resolvido;
+  const concluido = new Promise((r) => (resolvido = r));
+
+  res.status(200).json({ ok: true, ack: true });
+
+  try {
+    await _processarLead(body);
+  } catch (e) {
+    // Erros já são tratados/logados dentro de _processarLead; aqui é só rede.
+    try {
+      await responderNaThread(channel, ts,
+        `❌ Erro inesperado ao processar o lead. Tente reagir novamente.`);
+    } catch (_) { /* silencioso */ }
+  } finally {
+    resolvido();
+  }
+
+  return concluido;
+};
+
+/**
+ * _processarLead(body)
+ * v1.2 (21/07/2026): corpo original do handler (busca mensagem → parseia →
+ * checa duplicidade → cria no Bitrix → responde na thread), agora executado
+ * DEPOIS do ack. Lógica idêntica à v1.1 — apenas extraída para função própria.
+ */
+async function _processarLead(body) {
+  const { channel, ts, assignedById } = body;
+
   // ── 1. Busca a mensagem reagida ──
   const msg = await buscarMensagemReagida(channel, ts);
   if (!msg.ok) {
     // Não dá para responder na thread sem saber o canal? Temos o canal — avisa.
     await responderNaThread(channel, ts,
       `⚠️ Não consegui ler a mensagem para criar o lead (${msg.erro}).`);
-    return res.status(200).json({ ok: false, erro: msg.erro });
+    return;
   }
 
   // ── 2. Parseia o formulário ──
@@ -85,7 +124,7 @@ module.exports = async (req, res) => {
     await responderNaThread(channel, ts,
       `⚠️ Não criei o lead: faltou preencher ${faltando.join(', ')}. ` +
       `Use o formato "Campo: valor" (Nome, Empresa e Email são obrigatórios).`);
-    return res.status(200).json({ ok: false, faltando });
+    return;
   }
 
   // v1.0 (21/07/2026): se e-mail veio vazio (não deveria, é obrigatório, mas
@@ -105,7 +144,7 @@ module.exports = async (req, res) => {
     await responderNaThread(channel, ts,
       `ℹ️ Lead já existe no Bitrix (match ${exata.via}). ` +
       `ID ${exata.leadId}${link ? ` — ${link}` : ''}. Não criei duplicata.`);
-    return res.status(200).json({ ok: true, duplicata: 'exata', leadId: exata.leadId });
+    return; // v1.2: sem res aqui — _processarLead é chamada após o ack
   }
 
   // ── 4. Checagem FUZZY como fallback ──
@@ -116,7 +155,7 @@ module.exports = async (req, res) => {
       `ℹ️ Possível lead duplicado (similaridade ${(fuzzy.score * 100).toFixed(0)}%). ` +
       `Parecido com o lead ID ${fuzzy.leadId}${link ? ` — ${link}` : ''}. ` +
       `Não criei automaticamente para evitar duplicata — crie manualmente se for outro.`);
-    return res.status(200).json({ ok: true, duplicata: 'fuzzy', leadId: fuzzy.leadId, score: fuzzy.score });
+    return; // v1.2: sem res aqui
   }
 
   // ── 5. Cria Empresa → Contato → Lead ──
@@ -127,7 +166,7 @@ module.exports = async (req, res) => {
   if (!leadId) {
     await responderNaThread(channel, ts,
       `❌ Falha ao criar o lead no Bitrix. Verifique os dados e tente reagir novamente.`);
-    return res.status(200).json({ ok: false, erro: 'falha ao criar lead' });
+    return; // v1.2: sem res aqui
   }
 
   const link = _linkLeadBitrix(leadId);
@@ -135,8 +174,5 @@ module.exports = async (req, res) => {
     `✅ Lead criado no Bitrix (etapa Novos Leads) — ID ${leadId}` +
     `${link ? ` — ${link}` : ''}. Responsável: ${assignedById}. Fonte: CEO-Led Outbound.`);
 
-  return res.status(200).json({
-    ok: true,
-    leadId, companyId, contactId, assignedById
-  });
-};
+  // v1.2: fim de _processarLead — sem retorno de res (o ack já foi enviado)
+}
