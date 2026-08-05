@@ -125,9 +125,10 @@ A janela é **alinhada ao relógio**: cada execução reporta a hora-relógio an
 | `NOTIF_SOURCE_ID` | Não | Código(s) interno(s) da fonte, separados por vírgula. Padrão: `RECOMMENDATION`. |
 | `NOTIF_JANELA_MINUTOS` | Não | Tamanho da janela em minutos. Padrão: `60`. |
 
-**2. Secrets no GitHub** (repo → Settings → Secrets and variables → Actions):
-- `NOTIF_URL`: URL base do deploy (ex.: `https://seu-app.vercel.app`)
+**2. Secret no GitHub** (repo → Settings → Secrets and variables → Actions):
 - `NOTIF_SECRET`: mesmo valor configurado na Vercel
+
+A URL do deploy fica fixa no próprio workflow (`.github/workflows/notificar-leads.yml`, env `NOTIF_URL`) — ela não é sensível, pois o endpoint é protegido pelo segredo. Se a URL do deploy mudar, atualize lá. Sem o secret `NOTIF_SECRET`, o workflow falha logo no primeiro passo com mensagem explicando o que criar.
 
 **3. Convidar o bot para o canal de notificações**: `/invite @seu-bot` no canal. Sem isso, o envio falha com `not_in_channel`.
 
