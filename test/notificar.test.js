@@ -32,7 +32,7 @@ console.log('— 1 lead (singular, sem link) —');
     EMAIL: [{ VALUE: 'joao@acme.com', VALUE_TYPE: 'WORK' }],
     PHONE: [{ VALUE: '(21) 99999-9999', VALUE_TYPE: 'WORK' }]
   }]);
-  verificar('usa singular "1 novo lead"', texto.includes('1 novo lead "Por Recomendação"'));
+  verificar('usa singular "Chegou 1 nova indicação"', texto.includes('Chegou 1 nova indicação:'));
   verificar('mostra o título', texto.includes('Acme Ltda'));
   verificar('mostra o nome', texto.includes('João Silva'));
   verificar('mostra o e-mail real', texto.includes('joao@acme.com'));
@@ -48,7 +48,7 @@ console.log('— plural —');
     { ID: '2', TITLE: 'Empresa B', DATE_CREATE: '2026-08-05T10:30:00-03:00' }
   ];
   const texto = _formatarMensagem(leads);
-  verificar('usa plural "2 novos leads"', texto.includes('2 novos leads'));
+  verificar('usa plural "Chegaram 2 novas indicações"', texto.includes('Chegaram 2 novas indicações:'));
   verificar('uma linha de bullet por lead', (texto.match(/^• /gm) || []).length === 2);
 }
 
