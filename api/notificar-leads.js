@@ -3,10 +3,14 @@
  * BITRIX → SLACK — Notificação horária de leads "Por Recomendação"
  * ============================================================
  *
- * ARQUIVO: api/notificar-leads.js   |   DATA: 05/08/2026   |   VERSÃO: 1.0
+ * ARQUIVO: api/notificar-leads.js   |   DATA: 05/08/2026   |   VERSÃO: 1.1
  *
  * HISTÓRICO
  * ---------
+ * v1.1 (05/08/2026):
+ *   - Cabeçalho da mensagem trocado (pedido do usuário): de
+ *     '📋 Resumo: N novo(s) lead(s) "Por Recomendação" na última hora:'
+ *     para 'Chegou N nova indicação:' / 'Chegaram N novas indicações:'.
  * v1.0 (05/08/2026):
  *   - Versão inicial. Endpoint chamado de hora em hora pelo cron do GitHub
  *     Actions (.github/workflows/notificar-leads.yml). Consulta os leads
@@ -71,8 +75,11 @@ function _verificarSecret(req) {
  */
 function _formatarMensagem(leads) {
   const n = leads.length;
-  const plural = n === 1 ? 'novo lead' : 'novos leads';
-  const linhas = [`📋 Resumo: ${n} ${plural} "Por Recomendação" na última hora:`];
+  // v1.1 (05/08/2026): cabeçalho no formato pedido pelo usuário
+  // ("Chegou/Chegaram X nova(s) indicação(ões):"), sem emoji.
+  const linhas = [n === 1
+    ? `Chegou ${n} nova indicação:`
+    : `Chegaram ${n} novas indicações:`];
 
   for (const lead of leads) {
     const titulo  = lead.TITLE || `${lead.NAME || ''} ${lead.LAST_NAME || ''}`.trim() || `Lead ${lead.ID}`;
