@@ -1,0 +1,32 @@
+# ============================================================
+# Notificação horária de leads — cron do GitHub Actions
+# ============================================================
+# Chama o endpoint /api/notificar-leads (Vercel) de hora em hora.
+# O cron nativo da Vercel no plano Hobby só permite 1 execução/dia,
+# por isso o agendamento fica aqui.
+#
+# Secrets necessários (repo → Settings → Secrets and variables → Actions):
+#   NOTIF_URL    : URL base do deploy (ex: https://seu-app.vercel.app)
+#   NOTIF_SECRET : mesmo valor configurado na Vercel
+#
+# Sobre atrasos: o cron do GitHub pode atrasar alguns minutos — inofensivo,
+# porque o endpoint reporta a hora-relógio ANTERIOR completa (janela
+# determinística). Atraso além da virada da hora seguinte pula aquela
+# janela (tradeoff aceito, ver README).
+# ============================================================
+name: Notificação horária de leads
+
+on:
+  schedule:
+    - cron: '5 * * * *'   # minuto 5: menos congestionado que :00
+  workflow_dispatch:        # disparo manual para testes
+
+jobs:
+  notificar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chamar endpoint de notificação
+        run: |
+          curl -sS -f --retry 3 --retry-delay 10 \
+            -X POST "${{ secrets.NOTIF_URL }}/api/notificar-leads" \
+            -H "x-notif-secret: ${{ secrets.NOTIF_SECRET }}"

@@ -1,8 +1,10 @@
 # Slack → Bitrix Leads
 
-**Versão 1.5 — 21/07/2026**
+**Versão 1.6 — 05/08/2026**
 
 Automação que cria um lead no Bitrix24 a partir de uma reação com emoji numa mensagem do Slack, com checagem de duplicidade. O caminho principal é 100% determinístico (regex + similaridade de string); mensagens em texto livre podem ser estruturadas por um fallback opcional com Gemini. Roda em Vercel (plano gratuito).
+
+A partir da v1.6, o mesmo deploy também envia uma **notificação de hora em hora** com os leads criados no Bitrix com origem "Por Recomendação", num **canal separado** do Slack (ver seção própria abaixo). As duas funcionalidades coexistem sem interferência: o fluxo de reações continua respondendo nas threads dos canais onde o bot estiver, e a notificação horária só escreve no canal configurado em `SLACK_CANAL_NOTIFICACOES`.
 
 ## Como funciona
 
@@ -47,17 +49,25 @@ A partir da v1.5, e-mail é opcional em todos os caminhos: se a IA estruturar a 
 
 ```
 api/
-  slack-events.js   Recebe reaction_added, valida assinatura, responde < 3s,
-                    dispara o processamento assíncrono.
-  process-lead.js   Lê a mensagem, parseia, checa duplicidade, cria no Bitrix,
-                    responde na thread.
+  slack-events.js    Recebe reaction_added, valida assinatura, responde < 3s,
+                     dispara o processamento assíncrono.
+  process-lead.js    Lê a mensagem, parseia, checa duplicidade, cria no Bitrix,
+                     responde na thread.
+  notificar-leads.js Notificação horária: consulta leads "Por Recomendação"
+                     criados na última hora e posta resumo no canal dedicado.
 lib/
-  slack.js          Buscar mensagem reagida + postar resposta na thread.
-  parser.js         Parser do formulário (regex) + extração email/telefone.
-  gemini.js         Fallback opcional: estrutura texto livre via Gemini.
-  bitrix.js         Duplicidade (exata + fuzzy) e criação Empresa/Contato/Lead.
+  slack.js           Buscar mensagem reagida, responder na thread e postar
+                     mensagem direta em canal.
+  parser.js          Parser do formulário (regex) + extração email/telefone.
+  gemini.js          Fallback opcional: estrutura texto livre via Gemini.
+  bitrix.js          Duplicidade (exata + fuzzy), criação Empresa/Contato/Lead,
+                     listagem de leads recentes por fonte e link do lead.
+.github/workflows/
+  notificar-leads.yml  Cron horário (GitHub Actions) que chama o endpoint de
+                       notificação.
 test/
   parser-e-fuzzy.test.js  Testes locais (node test/parser-e-fuzzy.test.js).
+  notificar.test.js       Testes da formatação do resumo horário.
 ```
 
 ## Passo a passo de deploy
@@ -97,6 +107,52 @@ Convide o bot para o canal onde os leads são trazidos: `/invite @seu-bot`.
 ### 5. Testar
 Poste uma mensagem no formato do formulário e reaja com `1️⃣`, `2️⃣` ou `3️⃣`.
 A automação deve responder na thread em alguns segundos.
+
+## Notificação horária de leads (Por Recomendação)
+
+De hora em hora, um workflow do GitHub Actions chama `/api/notificar-leads`, que consulta no Bitrix os leads **criados na última hora** com a fonte configurada (padrão: `RECOMMENDATION`, "Por Recomendação") e posta um resumo num canal dedicado do Slack — **diferente** do canal onde o fluxo de reações opera. Se não houver nenhum lead na janela, nada é postado (evita ruído de 24 mensagens/dia).
+
+A janela é **alinhada ao relógio**: cada execução reporta a hora-relógio anterior completa (ex.: a execução das 10:05 reporta `[09:00, 10:00)`). Assim, atrasos de alguns minutos no cron do GitHub não perdem nem duplicam leads. Tradeoff aceito: se uma execução atrasar além da virada da hora seguinte ou for pulada, aquela hora fica sem notificação.
+
+### Configurar
+
+**1. Variáveis de ambiente na Vercel** (Settings → Environment Variables + Redeploy):
+
+| Variável | Obrigatória | Descrição |
+|---|---|---|
+| `SLACK_CANAL_NOTIFICACOES` | Sim | ID do canal de notificações (ex.: `C0123ABCDEF`). Pegue em: detalhes do canal no Slack → "Channel ID". |
+| `NOTIF_SECRET` | Sim | Segredo compartilhado que protege o endpoint (gere um valor longo e aleatório). |
+| `NOTIF_SOURCE_ID` | Não | Código(s) interno(s) da fonte, separados por vírgula. Padrão: `RECOMMENDATION`. |
+| `NOTIF_JANELA_MINUTOS` | Não | Tamanho da janela em minutos. Padrão: `60`. |
+
+**2. Secrets no GitHub** (repo → Settings → Secrets and variables → Actions):
+- `NOTIF_URL`: URL base do deploy (ex.: `https://seu-app.vercel.app`)
+- `NOTIF_SECRET`: mesmo valor configurado na Vercel
+
+**3. Convidar o bot para o canal de notificações**: `/invite @seu-bot` no canal. Sem isso, o envio falha com `not_in_channel`.
+
+### Verificar o código da fonte
+
+Se as notificações não trouxerem os leads esperados, confirme o código interno da fonte "Por Recomendação" no seu portal:
+
+```
+curl -s "SEU_BITRIX_WEBHOOK/crm.status.list.json?filter[ENTITY_ID]=SOURCE"
+```
+
+Procure o item com `NAME = "Por Recomendação"` e use o `STATUS_ID` dele em `NOTIF_SOURCE_ID`.
+
+### Testar manualmente
+
+```
+# Sem o header → deve retornar 401
+curl -X POST "https://seu-app.vercel.app/api/notificar-leads"
+
+# Janela larga de teste (últimos 7 dias) → posta resumo com leads antigos
+curl -X POST "https://seu-app.vercel.app/api/notificar-leads?janelaTesteMinutos=10080" \
+  -H "x-notif-secret: SEU_SEGREDO"
+```
+
+Também dá para disparar o workflow manualmente: GitHub → Actions → "Notificação horária de leads" → Run workflow. Os logs da função ficam em Vercel → Logs.
 
 ## Ajustes de duplicidade
 
