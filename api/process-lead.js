@@ -3,10 +3,14 @@
  * SLACK → BITRIX LEADS — Processamento assíncrono do lead
  * ============================================================
  *
- * ARQUIVO: api/process-lead.js   |   DATA: 21/07/2026   |   VERSÃO: 1.6
+ * ARQUIVO: api/process-lead.js   |   DATA: 05/08/2026   |   VERSÃO: 1.7
  *
  * HISTÓRICO
  * ---------
+ * v1.7 (05/08/2026):
+ *   - REFACTOR sem mudança de comportamento: _linkLeadBitrix movida para
+ *     lib/bitrix.js (montarLinkLead), para ser reutilizada pela notificação
+ *     horária (api/notificar-leads.js).
  * v1.6 (21/07/2026):
  *   - DIAGNÓSTICO: adicionados console.log em todo o fluxo do fallback Gemini
  *     (chave presente?, resultado da extração, motivo da falha). Antes, quando
@@ -69,20 +73,7 @@ const { parseFormulario, separarNome, extrairEmailTelefone, gerarEmailPlaceholde
 const { extrairCamposViaGemini }                          = require('../lib/gemini');
 const bitrix                                              = require('../lib/bitrix');
 
-/**
- * _linkLeadBitrix(leadId)
- * v1.0 (21/07/2026): monta a URL amigável do lead no portal Bitrix a partir
- * da base do webhook (extrai o domínio do portal). Usada nas mensagens de
- * feedback na thread.
- */
-function _linkLeadBitrix(leadId) {
-  const base = process.env.BITRIX_WEBHOOK || '';
-  // BITRIX_WEBHOOK ~ https://portal.bitrix24.com.br/rest/89/token/
-  const m = base.match(/^(https?:\/\/[^/]+)/);
-  const portal = m ? m[1] : '';
-  if (!portal || !leadId) return '';
-  return `${portal}/crm/lead/details/${leadId}/`;
-}
+// v1.7 (05/08/2026): _linkLeadBitrix virou bitrix.montarLinkLead (lib/bitrix.js).
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
@@ -214,7 +205,7 @@ async function _processarLead(body) {
   // ── 3. Checagem de duplicidade: EXATA primeiro ──
   const exata = await bitrix.checarDuplicataExata(campos.email, campos.telefone);
   if (exata.encontrado) {
-    const link = _linkLeadBitrix(exata.leadId);
+    const link = bitrix.montarLinkLead(exata.leadId);
     await responderNaThread(channel, ts,
       `ℹ️ Lead já existe no Bitrix (match ${exata.via}). ` +
       `ID ${exata.leadId}${link ? ` — ${link}` : ''}. Não criei duplicata.`);
@@ -224,7 +215,7 @@ async function _processarLead(body) {
   // ── 4. Checagem FUZZY como fallback ──
   const fuzzy = await bitrix.checarDuplicataFuzzy(campos.nome, campos.empresa);
   if (fuzzy.encontrado) {
-    const link = _linkLeadBitrix(fuzzy.leadId);
+    const link = bitrix.montarLinkLead(fuzzy.leadId);
     await responderNaThread(channel, ts,
       `ℹ️ Possível lead duplicado (similaridade ${(fuzzy.score * 100).toFixed(0)}%). ` +
       `Parecido com o lead ID ${fuzzy.leadId}${link ? ` — ${link}` : ''}. ` +
@@ -243,7 +234,7 @@ async function _processarLead(body) {
     return; // v1.2: sem res aqui
   }
 
-  const link = _linkLeadBitrix(leadId);
+  const link = bitrix.montarLinkLead(leadId);
   await responderNaThread(channel, ts,
     `✅ Lead criado no Bitrix (etapa Novos Leads) — ID ${leadId}` +
     `${link ? ` — ${link}` : ''}. Responsável: ${assignedById}. Fonte: CEO-Led Outbound.`);

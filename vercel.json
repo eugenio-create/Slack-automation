@@ -1,6 +1,7 @@
 {
   "functions": {
-    "api/slack-events.js":  { "maxDuration": 10 },
-    "api/process-lead.js":  { "maxDuration": 10 }
+    "api/slack-events.js":    { "maxDuration": 10 },
+    "api/process-lead.js":    { "maxDuration": 10 },
+    "api/notificar-leads.js": { "maxDuration": 10 }
   }
 }
