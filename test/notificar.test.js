@@ -68,6 +68,35 @@ console.log('— lead sem nada além do ID —');
   verificar('cai no fallback "Lead 4"', texto.includes('Lead 4'));
 }
 
+console.log('— Indicado por: ambos os campos —');
+{
+  const texto = _formatarMensagem([{
+    ID: '10', TITLE: 'Delta Ltda', DATE_CREATE: '2026-08-05T14:00:00-03:00',
+    SOURCE_DESCRIPTION: 'Maria Souza',
+    UF_CRM_1784828550: 'maria@empresa.com'
+  }]);
+  verificar('mostra "Indicado por" com nome e e-mail',
+    texto.includes('↳ Indicado por: Maria Souza — maria@empresa.com'));
+}
+
+console.log('— Indicado por: só SOURCE_DESCRIPTION —');
+{
+  const texto = _formatarMensagem([{
+    ID: '11', TITLE: 'Épsilon ME', DATE_CREATE: '2026-08-05T15:00:00-03:00',
+    SOURCE_DESCRIPTION: 'Carlos Lima'
+  }]);
+  verificar('mostra só o nome de quem indicou', texto.includes('↳ Indicado por: Carlos Lima'));
+  verificar('sem travessão sobrando', !texto.includes('Carlos Lima —'));
+}
+
+console.log('— Indicado por: campos vazios → sub-linha omitida —');
+{
+  const texto = _formatarMensagem([{
+    ID: '12', TITLE: 'Zeta SA', DATE_CREATE: '2026-08-05T16:00:00-03:00'
+  }]);
+  verificar('não mostra "Indicado por"', !texto.includes('Indicado por'));
+}
+
 console.log('— com BITRIX_WEBHOOK gera link —');
 {
   process.env.BITRIX_WEBHOOK = 'https://portal.bitrix24.com.br/rest/89/token/';
