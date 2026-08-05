@@ -39,7 +39,9 @@ jobs:
           fi
 
       - name: Chamar endpoint de notificação
+        # -L segue redirects (ex.: 308 da Vercel por barra dupla na URL) —
+        # sem isso o curl "passa" no redirect sem executar o endpoint.
         run: |
-          curl -sS -f --retry 3 --retry-delay 10 \
+          curl -sS -f -L --retry 3 --retry-delay 10 \
             -X POST "${NOTIF_URL%/}/api/notificar-leads" \
             -H "x-notif-secret: ${{ secrets.NOTIF_SECRET }}"
