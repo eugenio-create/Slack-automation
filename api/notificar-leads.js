@@ -3,10 +3,14 @@
  * BITRIX → SLACK — Notificação horária de leads "Por Recomendação"
  * ============================================================
  *
- * ARQUIVO: api/notificar-leads.js   |   DATA: 05/08/2026   |   VERSÃO: 1.1
+ * ARQUIVO: api/notificar-leads.js   |   DATA: 05/08/2026   |   VERSÃO: 1.2
  *
  * HISTÓRICO
  * ---------
+ * v1.2 (05/08/2026):
+ *   - Sub-linha "↳ Indicado por: <quem> — <e-mail>" em cada indicação,
+ *     com SOURCE_DESCRIPTION (quem indicou) e UF_CRM_1784828550 (e-mail
+ *     do indicador). Omitida quando ambos os campos estão vazios.
  * v1.1 (05/08/2026):
  *   - Cabeçalho da mensagem trocado (pedido do usuário): de
  *     '📋 Resumo: N novo(s) lead(s) "Por Recomendação" na última hora:'
@@ -100,6 +104,18 @@ function _formatarMensagem(leads) {
     if (hora) partes.push(`criado às ${hora}`);
 
     linhas.push(`• ${partes.join(' — ')}`);
+
+    // v1.2 (05/08/2026): sub-linha "Indicado por" — quem indicou vem de
+    // SOURCE_DESCRIPTION e o e-mail do indicador do campo customizado
+    // UF_CRM_1784828550. Omitida por completo quando ambos estão vazios.
+    const indicadoPor   = String(lead.SOURCE_DESCRIPTION || '').trim();
+    const emailIndicador = String(lead.UF_CRM_1784828550 || '').trim();
+    const indicacao = [indicadoPor, emailIndicador]
+      .filter((v) => v && !v.includes('@naoexiste.com'))
+      .join(' — ');
+    if (indicacao) {
+      linhas.push(`   ↳ Indicado por: ${indicacao}`);
+    }
   }
 
   return linhas.join('\n');
