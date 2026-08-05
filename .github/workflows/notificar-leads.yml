@@ -5,9 +5,13 @@
 # O cron nativo da Vercel no plano Hobby só permite 1 execução/dia,
 # por isso o agendamento fica aqui.
 #
-# Secrets necessários (repo → Settings → Secrets and variables → Actions):
-#   NOTIF_URL    : URL base do deploy (ex: https://seu-app.vercel.app)
-#   NOTIF_SECRET : mesmo valor configurado na Vercel
+# Configuração:
+#   NOTIF_URL    : fixa abaixo (env do job) — a URL do deploy não é
+#                  sensível, o endpoint é protegido pelo segredo.
+#                  Se a URL do deploy mudar, atualize aqui.
+#   NOTIF_SECRET : secret do repositório (Settings → Secrets and
+#                  variables → Actions), mesmo valor configurado na
+#                  Vercel. NUNCA commitar o valor — o repo é público.
 #
 # Sobre atrasos: o cron do GitHub pode atrasar alguns minutos — inofensivo,
 # porque o endpoint reporta a hora-relógio ANTERIOR completa (janela
@@ -24,9 +28,18 @@ on:
 jobs:
   notificar:
     runs-on: ubuntu-latest
+    env:
+      NOTIF_URL: https://slack-automation-vnr8-ashy.vercel.app
     steps:
+      - name: Validar secret
+        run: |
+          if [ -z "${{ secrets.NOTIF_SECRET }}" ]; then
+            echo "::error::Secret NOTIF_SECRET ausente no GitHub — crie em Settings → Secrets and variables → Actions com o mesmo valor configurado na Vercel (ver README, seção 'Notificação horária de leads')."
+            exit 1
+          fi
+
       - name: Chamar endpoint de notificação
         run: |
           curl -sS -f --retry 3 --retry-delay 10 \
-            -X POST "${{ secrets.NOTIF_URL }}/api/notificar-leads" \
+            -X POST "${NOTIF_URL%/}/api/notificar-leads" \
             -H "x-notif-secret: ${{ secrets.NOTIF_SECRET }}"
