@@ -84,10 +84,10 @@ simples: um texto como `<!channel>` não dispara uma menção.
 Por padrão inclui os campos padrão de nome, empresa, e-mail, telefone e site,
 mais os campos encontrados em `crm.lead.fields` pelos rótulos:
 
-- `nome.lead`, `email.lead`, `Work Email`;
+- `nome.lead` (exibido no Slack como "Nome do contato"), `email.lead`, `Work Email`;
 - `Número de seu WhatsApp com ddd`;
 - as variantes de quantidade de contas de WhatsApp usadas pelo portal;
-- `Caso(s) de Uso`, `Outros Casos de Uso`, `Sou/Represento uma Empresa`;
+- `Outros Casos de Uso` (`Caso(s) de Uso` e `Sou/Represento uma Empresa` nunca são exibidos);
 - `O que você busca resolver com Zapper? - Facebook`.
 
 Campos vazios são omitidos; zero é preservado; opções de listas são exibidas pelo
