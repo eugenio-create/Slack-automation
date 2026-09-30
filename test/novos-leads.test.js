@@ -180,11 +180,18 @@ test('endpoint responde erro HTTP em falha operacional, sem dados do formulário
 test('cliente pagina canais mesmo quando uma página está vazia', async () => {
   const requests = [];
   const fakeFetch = async (url, opts) => {
-    requests.push(JSON.parse(opts.body));
+    requests.push({ url: new URL(url), opts });
     return { ok: true, json: async () => requests.length === 1
       ? { ok: true, channels: [], response_metadata: { next_cursor: 'next' } }
       : { ok: true, channels: [{ id: 'C1' }], response_metadata: { next_cursor: '' } } };
   };
-  const clients = createClients({ BITRIX_WEBHOOK: 'https://example.com/rest/1/secret/', UPSTASH_REDIS_REST_URL: 'https://redis.example.com' }, fakeFetch);
-  assert.equal((await clients.channels()).length, 1); assert.equal(requests[1].cursor, 'next');
+  const clients = createClients({ BITRIX_WEBHOOK: 'https://example.com/rest/1/secret/', UPSTASH_REDIS_REST_URL: 'https://redis.example.com', SLACK_BOT_TOKEN: 'test-token' }, fakeFetch);
+  assert.equal((await clients.channels()).length, 1);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].opts.method, 'GET');
+  assert.equal(requests[0].opts.body, undefined);
+  assert.equal(requests[0].opts.headers.Authorization, 'Bearer test-token');
+  assert.equal(requests[0].url.searchParams.get('cursor'), null);
+  assert.equal(requests[1].url.searchParams.get('cursor'), 'next');
+  assert.equal(requests[1].url.searchParams.get('types'), 'public_channel,private_channel');
 });
