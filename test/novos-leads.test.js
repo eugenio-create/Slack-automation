@@ -34,7 +34,7 @@ function fixture(options = {}) {
     initialized: async () => initialized,
     initialize: async ids => { ids.forEach(id => records.set(id, { state: 'baseline' })); initialized = true; },
     cursor: async () => cursor, setCursor: async id => { cursor = id; },
-    get: async id => records.get(id),
+    getMany: async ids => new Map(ids.map(id => [id, records.get(id)])),
     reserve: async (id, record) => { if (records.has(id)) return false; records.set(id, record); return true; },
     put: async (id, record) => { records.set(id, record); }, remove: async id => { records.delete(id); }
   };

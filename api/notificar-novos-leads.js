@@ -17,13 +17,16 @@ function createHandler({ env = process.env, clientsFactory = createClients, stor
     if (!['GET', 'POST'].includes(req.method)) return res.status(405).json({ ok: false, code: 'method_not_allowed' });
     if (!authorized(req, env.NOVOS_LEADS_SECRET)) return res.status(401).json({ ok: false, code: 'unauthorized' });
     if (env.NOVOS_LEADS_ENABLED !== 'true') return res.status(503).json({ ok: false, code: 'not_enabled' });
+    const runtimeEnv = { ...env,
+      UPSTASH_REDIS_REST_URL: env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL,
+      UPSTASH_REDIS_REST_TOKEN: env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN };
     const missing = ['BITRIX_WEBHOOK', 'SLACK_BOT_TOKEN', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN']
-      .filter(key => !env[key]);
+      .filter(key => !runtimeEnv[key]);
     if (missing.length) return res.status(503).json({ ok: false, code: 'missing_configuration', missing });
     const mode = env.NOVOS_LEADS_INITIAL_MODE || 'baseline';
     if (!['baseline', 'all'].includes(mode)) return res.status(503).json({ ok: false, code: 'invalid_initial_mode' });
     try {
-      const clients = clientsFactory(env);
+      const clients = clientsFactory(runtimeEnv);
       const stageId = resolveStage(await clients.stages(), env.NOVOS_LEADS_STATUS_ID);
       const store = storeFactory(clients.redis, clients.portal, stageId);
       const result = await poll({ clients, store, stageId, mode,

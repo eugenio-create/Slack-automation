@@ -21,6 +21,8 @@ usa aproximação ou um canal genérico quando o canal correto não existe.
    Mudanças de escopos podem exigir reinstalar o app por um administrador.
 3. Configure um Redis persistente com API REST Upstash:
    `UPSTASH_REDIS_REST_URL` e `UPSTASH_REDIS_REST_TOKEN`.
+   A integração da Vercel pode criar `KV_REST_API_URL` e `KV_REST_API_TOKEN`;
+   esses nomes também são aceitos, sem copiar ou revelar os segredos.
    Não use armazenamento temporário da função nem política de expulsão dos recibos.
    Redis guarda apenas IDs, estado do envio, timestamp do Slack e identificador
    da tentativa; não guarda respostas do formulário, telefone ou e-mail.
