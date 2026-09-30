@@ -7,6 +7,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node test/parser-e-fuzzy.test.js && node test/notificar.test.js"
+    "test": "node test/parser-e-fuzzy.test.js && node test/notificar.test.js && node --test test/novos-leads.test.js"
   }
 }
+

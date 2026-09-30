@@ -1,5 +1,16 @@
 # Slack → Bitrix Leads
 
+## Notificação de novos leads por responsável (Bitrix → Slack)
+
+O endpoint `/api/notificar-novos-leads` consulta a etapa de primeiro contato e
+envia cada lead ao canal `novosleads-nome-do-responsavel`, com os dados do
+formulário e link para o Bitrix. Inclui controle persistente de envios, proteção
+contra chamadas simultâneas e simulação sem mensagens reais.
+
+**Ativação pendente de configuração:** veja [guia de configuração, campos e
+agendamento a cada minuto](docs/novos-leads.md). A nova função fica desativada
+por padrão; não altera a notificação horária nem o processamento de reações.
+
 **Versão 1.6 — 05/08/2026**
 
 Automação que cria um lead no Bitrix24 a partir de uma reação com emoji numa mensagem do Slack, com checagem de duplicidade. O caminho principal é 100% determinístico (regex + similaridade de string); mensagens em texto livre podem ser estruturadas por um fallback opcional com Gemini. Roda em Vercel (plano gratuito).
@@ -166,3 +177,4 @@ Também dá para disparar o workflow manualmente: GitHub → Actions → "Notifi
 - A assinatura de todas as requisições do Slack é verificada (HMAC v0) com proteção contra replay (5 min).
 - Segredos ficam só nas Environment Variables da Vercel, nunca no código.
 - E-mails placeholder (`@naoexiste.com`) não são gravados no campo EMAIL do Bitrix.
+
