@@ -59,15 +59,30 @@ test('campos do formulário são explícitos; não inclui campos internos automa
   assert.deepEqual(formFields(metadata, 'NAME,UF_QTD'), ['NAME', 'UF_QTD']);
   assert.throws(() => formFields(metadata, 'MISSING'), /invalid/);
 });
-test('mensagem preserva dados numéricos zero, lista e empresa vinculada em plain_text', () => {
+// v1.1 (2026-09-30): teste atualizado para o layout Block Kit (mrkdwn com valores escapados).
+test('mensagem preserva dados numéricos zero, lista e empresa vinculada com valores escapados', () => {
   const message = formatMessage({ lead: { ID: '1', NAME: '<!channel>', UF_QTD: 0, UF_CASE: ['3'] },
     user: { NAME: 'Paulo' }, company: { TITLE: 'Acme' }, fields: formFields(metadata), metadata, portal: 'https://example.com' });
-  const text = message.blocks.filter(b => b.type === 'section').map(b => b.text.text).join('');
-  assert.match(text, /Empresa vinculada: Acme/);
-  assert.match(text, /empresa: 0/);
+  const sections = message.blocks.filter(b => b.type === 'section');
+  const text = sections.map(b => b.text?.text || b.fields.map(f => f.text).join('\n')).join('\n');
+  assert.equal(message.blocks[0].type, 'header');
+  assert.match(text, /\*Empresa vinculada:\* Acme/);
+  assert.match(text, /empresa:\* 0/);
   assert.match(text, /Vendas/);
-  assert.ok(message.blocks.filter(b => b.type === 'section').every(b => b.text.type === 'plain_text'));
+  assert.match(text, /&lt;!channel&gt;/);
+  assert.ok(!text.includes('<!channel>'));
   assert.equal(message.blocks.at(-1).elements[0].url, 'https://example.com/crm/lead/details/1/');
+});
+test('formulário longo é fatiado por linhas inteiras e respeita o limite de 3000 do Slack', () => {
+  const big = { ...metadata };
+  const codes = Array.from({ length: 60 }, (_, i) => `UF_${i}`);
+  codes.forEach(c => { big[c] = { title: `Campo ${c}` }; });
+  const lead = { ID: '2', TITLE: 'T', ...Object.fromEntries(codes.map(c => [c, 'x'.repeat(200)])) };
+  const message = formatMessage({ lead, user: { NAME: 'Paulo' }, fields: codes, metadata: big, portal: 'https://example.com' });
+  const texts = message.blocks.filter(b => b.text && b.type === 'section').map(b => b.text.text);
+  assert.ok(texts.length > 1);
+  assert.ok(texts.every(t => t.length <= 3000));
+  assert.ok(texts.join('\n').split('\n').filter(l => l.startsWith('*Campo')).every(l => l.endsWith('x'.repeat(200))));
 });
 test('envia uma vez, persiste recibo e não repete em novas execuções', async () => {
   const f = fixture();
