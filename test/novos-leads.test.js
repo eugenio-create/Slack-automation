@@ -55,7 +55,8 @@ test('descobre a etapa pelo nome e recusa ambiguidade em vez de adivinhar', () =
   assert.equal(resolveStage(stages.slice(0, 1)), 'X');
 });
 test('campos do formulário são explícitos; não inclui campos internos automaticamente', () => {
-  assert.deepEqual(formFields(metadata), ['NAME', 'COMPANY_TITLE', 'EMAIL', 'UF_EMAIL', 'UF_QTD', 'UF_CASE']);
+  // v1.2 (2026-09-30): 'Caso(s) de Uso' não é mais selecionado automaticamente.
+  assert.deepEqual(formFields(metadata), ['NAME', 'COMPANY_TITLE', 'EMAIL', 'UF_EMAIL', 'UF_QTD']);
   assert.deepEqual(formFields(metadata, 'NAME,UF_QTD'), ['NAME', 'UF_QTD']);
   assert.throws(() => formFields(metadata, 'MISSING'), /invalid/);
 });
@@ -63,15 +64,26 @@ test('campos do formulário são explícitos; não inclui campos internos automa
 test('mensagem preserva dados numéricos zero, lista e empresa vinculada com valores escapados', () => {
   const message = formatMessage({ lead: { ID: '1', NAME: '<!channel>', UF_QTD: 0, UF_CASE: ['3'] },
     user: { NAME: 'Paulo' }, company: { TITLE: 'Acme' }, fields: formFields(metadata), metadata, portal: 'https://example.com' });
+  // v1.2 (2026-09-30): UF_CASE ('Caso(s) de Uso') não é mais exibido; removida a expectativa de /Vendas/.
   const sections = message.blocks.filter(b => b.type === 'section');
   const text = sections.map(b => b.text?.text || b.fields.map(f => f.text).join('\n')).join('\n');
   assert.equal(message.blocks[0].type, 'header');
   assert.match(text, /\*Empresa vinculada:\* Acme/);
   assert.match(text, /empresa:\* 0/);
-  assert.match(text, /Vendas/);
+  assert.doesNotMatch(text, /Vendas/);
   assert.match(text, /&lt;!channel&gt;/);
   assert.ok(!text.includes('<!channel>'));
   assert.equal(message.blocks.at(-1).elements[0].url, 'https://example.com/crm/lead/details/1/');
+});
+// v1.2 (2026-09-30): renomeia nome.lead e oculta campos, inclusive quando listados explicitamente.
+test('nome.lead vira "Nome do contato" e campos ocultos não são exibidos', () => {
+  const meta = { UF_NOME: { formLabel: 'nome.lead' }, UF_CASE: metadata.UF_CASE,
+    UF_EMP: { formLabel: 'Sou/Represento uma Empresa' } };
+  const message = formatMessage({ lead: { ID: '3', UF_NOME: 'Ana', UF_CASE: ['3'], UF_EMP: 'Sim' },
+    user: { NAME: 'Paulo' }, fields: ['UF_NOME', 'UF_CASE', 'UF_EMP'], metadata: meta, portal: 'https://example.com' });
+  const text = message.blocks.filter(b => b.type === 'section' && b.text).map(b => b.text.text).join('\n');
+  assert.match(text, /\*Nome do contato:\* Ana/);
+  assert.doesNotMatch(text, /nome\.lead|Caso\(s\)|Sou\/Represento|Vendas/);
 });
 test('formulário longo é fatiado por linhas inteiras e respeita o limite de 3000 do Slack', () => {
   const big = { ...metadata };
