@@ -222,3 +222,43 @@ test('cliente pagina canais mesmo quando uma página está vazia', async () => {
   assert.equal(requests[1].url.searchParams.get('cursor'), 'next');
   assert.equal(requests[1].url.searchParams.get('types'), 'public_channel,private_channel');
 });
+
+// v1.3 (2026-10-01): normalização de telefone e links do WhatsApp; e-mail exibido uma vez só.
+const { normalizeBrPhone, whatsappTemplate } = require('../lib/novos-leads');
+test('normaliza telefones brasileiros reais e recusa estrangeiros e lixo', () => {
+  const valid = { '11 99780-8847': '5511997808847', '+55 11 99168-8497': '5511991688497',
+    '55+(22)99828-2407': '5522998282407', '81.9.89237167': '5581989237167', '5588981504269': '5588981504269',
+    '556799455390': '556799455390', '5195585592': '555195585592', '55996268714': '5555996268714',
+    '(99)991357990': '5599991357990', '021984277054': '5521984277054', '91.988.483.164': '5591988483164',
+    '11 9xxx, +55 11 99168-8497': '5511991688497', '22999919994': '5522999919994' };
+  for (const [raw, expected] of Object.entries(valid)) assert.equal(normalizeBrPhone(raw), expected, raw);
+  for (const raw of ['Oi', '52', '5,51199E+12', '+595981312252', '+0992113081', '66599635002', '68065298',
+    'https://www.linkedin.com/in/x/', '', null]) assert.equal(normalizeBrPhone(raw), null, String(raw));
+});
+test('mensagem traz links do WhatsApp com template e e-mail sem duplicar', () => {
+  const meta = { EMAIL: { title: 'E-mail' }, UF_EMAIL: { formLabel: 'email.lead' },
+    UF_NOME: { formLabel: 'nome.lead' }, UF_WHATS: { formLabel: 'Número de seu WhatsApp com ddd' } };
+  const lead = { ID: '25359', EMAIL: [{ VALUE: 'bruno@example.com' }], UF_EMAIL: 'bruno@example.com',
+    UF_NOME: 'bruno teste', UF_WHATS: '(22) 99991-9994' };
+  const message = formatMessage({ lead, user: { NAME: 'Gabriella', LAST_NAME: 'Salles' },
+    fields: ['EMAIL', 'UF_EMAIL', 'UF_NOME', 'UF_WHATS'], metadata: meta, portal: 'https://example.com' });
+  const text = message.blocks.filter(b => b.type === 'section' && b.text).map(b => b.text.text).join('\n');
+  assert.equal(text.match(/bruno@example\.com/g).length, 1);
+  assert.doesNotMatch(text, /email\.lead/);
+  assert.match(text, /<https:\/\/wa\.me\/5522999919994\|wa\.me\/5522999919994>/);
+  const url = text.match(/<(https:\/\/web\.whatsapp\.com\/send\?[^|>]+)\|/)[1];
+  const params = new URL(url).searchParams;
+  assert.equal(params.get('phone'), '5522999919994');
+  assert.equal(params.get('text'), whatsappTemplate('Bruno', 'Gabriella'));
+  assert.equal(params.get('text'), 'Olá, Bruno!\nAqui é o Gabriella da Zapper.\n\nRecebi seu contato em nosso site.\n\n'
+    + 'Hoje qual desafio você está buscando resolver com a ajuda da Zapper?\nFique à vontade pra enviar em áudio caso seja mais prático!');
+});
+test('sem E-mail padrão, email.lead aparece como E-mail; número inválido não gera link', () => {
+  const meta = { EMAIL: { title: 'E-mail' }, UF_EMAIL: { formLabel: 'email.lead' } };
+  const message = formatMessage({ lead: { ID: '1', UF_EMAIL: 'a@b.com', PHONE: [{ VALUE: 'Oi' }] },
+    user: { NAME: 'Paulo' }, fields: ['EMAIL', 'UF_EMAIL'], metadata: meta, portal: 'https://example.com' });
+  const text = message.blocks.filter(b => b.type === 'section' && b.text).map(b => b.text.text).join('\n');
+  assert.match(text, /\*E-mail:\* a@b\.com/);
+  assert.match(text, /não reconhecido/);
+  assert.doesNotMatch(text, /wa\.me/);
+});
