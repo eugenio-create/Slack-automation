@@ -85,14 +85,13 @@ Por padrão inclui os campos padrão de nome, empresa, e-mail, telefone e site,
 mais os campos encontrados em `crm.lead.fields` pelos rótulos:
 
 - `nome.lead` (exibido no Slack como "Nome do contato"), `email.lead` (só exibido, como "E-mail", quando o E-mail padrão está vazio), `Work Email`;
-- `Número de seu WhatsApp com ddd`;
 - as variantes de quantidade de contas de WhatsApp usadas pelo portal;
 - `Outros Casos de Uso` (`Caso(s) de Uso` e `Sou/Represento uma Empresa` nunca são exibidos);
 - `O que você busca resolver com Zapper? - Facebook`.
 
 Abaixo dos dados vêm dois links do WhatsApp (v1.3, 2026-10-01): `wa.me/55...` e
 `web.whatsapp.com/send` com a mensagem de primeiro contato já preenchida. O número vem
-de `Número de seu WhatsApp com ddd` ou, na falta, de `Telefone de trabalho` (PHONE), e é
+de `Número de seu WhatsApp com ddd` (campo não exibido, pois repete o Telefone) ou, na falta, de `Telefone de trabalho` (PHONE), e é
 normalizado para `55` + DDD + número; números estrangeiros ou inválidos não geram link.
 
 Campos vazios são omitidos; zero é preservado; opções de listas são exibidas pelo

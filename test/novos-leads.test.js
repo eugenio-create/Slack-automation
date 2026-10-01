@@ -245,6 +245,8 @@ test('mensagem traz links do WhatsApp com template e e-mail sem duplicar', () =>
   const text = message.blocks.filter(b => b.type === 'section' && b.text).map(b => b.text.text).join('\n');
   assert.equal(text.match(/bruno@example\.com/g).length, 1);
   assert.doesNotMatch(text, /email\.lead/);
+  // v1.4 (2026-10-01): o campo do WhatsApp não é exibido, mas alimenta os links.
+  assert.doesNotMatch(text, /Número de seu WhatsApp/);
   assert.match(text, /<https:\/\/wa\.me\/5522999919994\|wa\.me\/5522999919994>/);
   const url = text.match(/<(https:\/\/web\.whatsapp\.com\/send\?[^|>]+)\|/)[1];
   const params = new URL(url).searchParams;
